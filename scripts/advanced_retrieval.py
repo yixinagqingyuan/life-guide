@@ -268,11 +268,14 @@ class Corpus:
             for _, terms, _ in variants:
                 combined_terms.update(terms)
             matched = sorted((t for t in combined_terms if t in text), key=lambda t: (-len(t), t))
+            # 成本与收益转发原文标签，供提醒展示，不参与这里的排序打分。
             results.append(dict(id=meta['id'], title=meta['title'], chapter=meta['chapter'],
                                 source_entry=meta['source_entry'], chapter_title=meta['chapter_title'],
                                 path=str(e['path'].resolve()), score=round(rerank, 6),
                                 matched_terms=matched, evidence_label=meta['evidence_label'],
-                                cost_money=meta['cost_money'], disputed=meta['disputed'],
+                                cost_money=meta['cost_money'], cost_time=meta['cost_time'],
+                                cost_will=meta['cost_will'], benefit_label=meta['benefit_label'],
+                                benefit_dimension=meta['benefit_dimension'], disputed=meta['disputed'],
                                 pending_verification=meta['pending_verification'],
                                 source_url=meta['source_url'], web_url=meta['web_url'],
                                 snippet=e['snippet'][:240], snippet_truncated=len(e['snippet']) > 240,

@@ -165,11 +165,14 @@ def legacy_retrieve(root: Path, query: str, limit: int = 5, chapters=None, topic
         if meta['chapter'] in preferred:
             score *= 1.18
         score *= 1.0 + min(coverage, 1.0)
+        # 与新版保持一致，返回原文成本收益标签；这些字段不额外影响分数。
         results.append(dict(id=meta['id'], title=meta['title'], chapter=meta['chapter'],
                             source_entry=meta['source_entry'], chapter_title=meta['chapter_title'],
                             path=str(e['path'].resolve()), score=round(score, 3),
                             matched_terms=sorted(matched, key=lambda t: (-weights[t], -len(t))),
                             evidence_label=meta['evidence_label'], cost_money=meta['cost_money'],
+                            cost_time=meta['cost_time'], cost_will=meta['cost_will'],
+                            benefit_label=meta['benefit_label'], benefit_dimension=meta['benefit_dimension'],
                             disputed=meta['disputed'], pending_verification=meta['pending_verification'],
                             source_url=meta['source_url'], web_url=meta['web_url'],
                             snippet=e['snippet'][:240], snippet_truncated=len(e['snippet']) > 240))
