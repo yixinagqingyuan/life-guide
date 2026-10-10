@@ -26,6 +26,22 @@ $skill-installer 请从 https://github.com/yixinagqingyuan/life-guide 安装 lif
 
 内置 Skill Installer 支持从其他 GitHub 仓库安装；Codex 会检测新增技能，如果没有显示，可以重启后再调用。显式调用可确保本会话使用它，安装本身不保证所有新会话都自动附提醒。见 [OpenAI 官方 Skill 说明](https://learn.chatgpt.com/docs/build-skills)。
 
+### 所有新对话都默认附提醒
+
+如果希望换项目、开新对话后也继续使用，只需在安装后让 Codex 配置一次全局指令。把下面这段话发到 Codex：
+
+```text
+请把已安装的 life-guide 设为当前 Codex 用户的全局默认：检查实际 CODEX_HOME（未设置时为 ~/.codex），将以下规则追加到当前生效的全局 AGENTS.md；如果非空的 AGENTS.override.md 已生效，则追加到该文件。保留已有指令，同一规则不要重复添加，不要新建覆盖文件来遮蔽原设置。记录 life-guide 的实际安装路径。
+
+默认在每次用户提问或请求时使用 life-guide。每个新会话先读取该 Skill 的 SKILL.md，再按本轮主题检索本地完整条目；先正常回答原问题，最终答复结尾只附一条相关提醒，逐字展示条目原标题、章节和对应性价比分档。中途更新不附提醒。用户要求暂停、关闭提醒或严格限定输出格式时遵守最新要求。读取失败时说明无法核对，不编造内容。
+```
+
+Codex 会在启动任务时读取全局指令，默认文件为 `~/.codex/AGENTS.md`；设置了 `CODEX_HOME` 时使用该目录。非空的 `AGENTS.override.md` 优先，项目内更具体的指令也可能覆盖全局默认。机制见 [OpenAI 官方 AGENTS.md 说明](https://learn.chatgpt.com/docs/agent-configuration/agents-md)。配置后新建对话验证，已有会话未更新时重启 Codex。
+
+验证时直接问“午休怎么安排”，不加 `$life-guide`，检查回答末尾是否出现相关原标题及性价比分档。该配置作用于这台电脑当前 Codex 用户配置；另一台电脑、另一个用户配置或其他聊天应用需要单独设置。
+
+本会话可说“关闭高性价比人生指南提醒”；若希望以后的新对话也停用，让 Codex 删除全局指令中仅属于 `life-guide` 的这一段，保留其余配置。
+
 ### 方式二：自己安装整个文件夹
 
 <details>
