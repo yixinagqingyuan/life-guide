@@ -1,7 +1,9 @@
-"""Build a portable Markdown knowledge base from a pinned upstream checkout.
+"""把本地上游仓库的固定版本整理成可整体搬走的 Markdown 知识库。
 
-Python 3.10+, standard library only. No network requests. Existing output is
-refused so rebuilding cannot silently overwrite personal notes or older data.
+数据流：book/ 原章节 → 完整条目 → 元数据、主题索引和交叉引用导航。
+原章节、专题与许可按字节复制；条目只规范化 BOM/换行，不改写原文。
+构建只读本地文件，不联网；需要 Python 3.10+，仅使用标准库。
+阅读时先看 split_chapter() 如何拆条目，再看 build() 如何组装整个包。
 """
 from __future__ import annotations
 
@@ -15,10 +17,13 @@ import re
 import shutil
 from urllib.parse import quote
 
+# 这些网址只写入溯源信息，构建过程不会请求它们。
 REPO = 'https://github.com/eternity4719/HowToLiveBetter'
 WEB = 'https://eternity4719.github.io/HowToLiveBetter/'
+# 只把三级标题中的编号识别为条目起点，六个字段用中文标签定位。
 HEAD = re.compile(r'^###\s+(\d+)[.、]\s*(.+)$', re.M)
 FIELDS = re.compile(r'^- (成本|说人话|收益|证据等级|来源|备注)：', re.M)
+# 主题按章节建立阅读入口；一章可以出现在多个主题中。
 TOPICS = {
     '健康与就医': [1, 2, 13, 16, 24, 27, 28, 33, 34],
     '钱与消费': [5, 6, 7, 8, 12, 15, 18, 19, 24],
@@ -29,7 +34,9 @@ TOPICS = {
     '住房与生活保障': [7, 15, 24, 33],
     '安全与信息': [1, 8, 9, 13, 14, 21, 26],
 }
-# These are retrieval aids, not additional facts or recommendations.
+# 每行依次为：分组名、用户常见说法、规范检索词、优先章节。
+# 「、」是数据分隔符。查询时读取生成的 topics/keywords.md，
+# 所以修改这里后还要刷新表格；这些映射是检索辅助，不是指南结论。
 ALIASES = [
     ('失业与裁员', '被炒、下岗、失业、裁员、被裁、被辞退、公司把我开了、公司不要我了、饭碗没了、岗位没了', '失业、补偿、离职、劳动合同', '7、19'),
     ('欠薪', '欠薪、拖欠工资、不发工资、工资拖着、工资没发、老板一直不给钱、工钱拿不到、工资迟迟不到账', '欠薪、工资、劳动监察、仲裁', '7、19'),
@@ -68,6 +75,7 @@ ALIASES = [
     ('租住与房产变化', '租的房子、租约、房子被卖、卖房、换房东', '租约、卖掉、租期、买卖不破租赁', '15'),
     ('药物搭配', '能一起吃、同时吃、混着吃、重复用药、两种感冒药', '成分、对乙酰氨基酚、重复', '34'),
 ]
+# 场景入口把关键词分组、章节和专题连起来，供人或助手定位资料。
 SCENARIOS = {
     '被裁或失业': ('失业与裁员、欠薪、救助与保障', [7, 19], ['被裁了之后先做什么.md']),
     '换工作或换城市': ('辞职与换工作、住房、拖延与时间', [19, 23, 31, 15], ['换工作、换城市之前.md']),
@@ -82,31 +90,48 @@ SCENARIOS = {
 
 
 def read_text(path: Path) -> str:
+    """读取 UTF-8 文本，去掉 BOM，并把 CRLF 统一为 LF 以便解析。
+
+    此函数用于解析；保留原文件字节的地方使用 shutil.copyfile()。
+    """
     return path.read_bytes().decode('utf-8-sig').replace('\r\n', '\n')
 
 
 def write(path: Path, text: str) -> None:
+    """写出生成的 UTF-8 文档，自动建父目录，并固定使用 LF 换行。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding='utf-8', newline='\n')
 
 
 def frontmatter(meta: dict) -> str:
-    # JSON literals are valid YAML; our searcher can parse without PyYAML.
+    """把元数据写成 YAML frontmatter，每个值用 JSON 字面量编码。
+
+    这样字符串、布尔值和列表都能用 json.loads() 读回，无需 YAML 库。
+    这个约定只适用于本项目生成的条目，不是通用 YAML 解析方案。
+    """
     return '---\n' + ''.join(f'{k}: {json.dumps(v, ensure_ascii=False)}\n' for k, v in meta.items()) + '---\n\n'
 
 
 def render_alias_table() -> str:
+    """把 ALIASES 渲染为检索脚本读取的四列表格，也可单独刷新词表。"""
     text = '# 关键词与近义表达\n\n本表由知识库整理者添加，仅用于扩大检索，不是原作者结论。检索脚本读取此表，不需要隐藏索引或向量数据库。\n\n| 入口 | 常见表达 | 检索关键词 | 优先章节 |\n| --- | --- | --- | --- |\n'
     return text + ''.join('| ' + ' | '.join(row) + ' |\n' for row in ALIASES)
 
 
 def parse_fields(block: str) -> dict:
+    """按六个字段标签切出字段内容，返回「字段名 → 完整字段文本」。"""
     marks = list(FIELDS.finditer(block))
     return {m[1]: block[m.end(): marks[i + 1].start() if i + 1 < len(marks) else len(block)].strip()
             for i, m in enumerate(marks)}
 
 
 def split_chapter(path: Path) -> tuple[str, list[dict]]:
+    """把一个原章节拆成完整条目，返回章节标题和条目字典列表。
+
+    每个条目保留 block 原文、fields 字段、成本标签、原文行号等。
+    编号重复、字段缺失或无法完整重组章节时抛出 ValueError。
+    这里按原文条目拆分；检索窗口的字数切片在 advanced_retrieval.py。
+    """
     text = read_text(path)
     chapter = int(path.name.split('-')[0])
     title_match = re.search(r'^#\s+(.+)$', text, re.M)
@@ -122,43 +147,57 @@ def split_chapter(path: Path) -> tuple[str, list[dict]]:
         if number in seen:
             raise ValueError(f'Duplicate entry number: {path.name}:{number}')
         seen.add(number)
+        # 用相邻标题的位置确定边界，把备注和来源一起留在本条内。
         body = text[m.start(): marks[i + 1].start() if i + 1 < len(marks) else len(text)]
         fields = parse_fields(body)
         missing = set(['成本', '说人话', '收益', '证据等级', '来源', '备注']) - fields.keys()
         if missing:
             raise ValueError(f'Missing fields {missing}: {path.name}:{number}')
+        # HTML 注释里的成本标签只抽成辅助元数据，原注释仍留在 block 中。
         label = re.search(r'<!--\s*成本标签:(.*?)-->', body, re.S)
         tags = dict(re.findall(r'(钱|时间|毅力|收益|口径)=([^\s]+)', label[1] if label else ''))
         title = m[2].strip()
+        # ID 根据章号和完整标题生成；只变条号时不变，改标题时会变。
         identity = f'{chapter}:{title}'
         uid = f'lg-{chapter:02d}-{hashlib.sha256(identity.encode()).hexdigest()[:12]}'
-        # Numbered addresses are version-specific; identity persists across
-        # renumbering when the chapter and exact title remain unchanged.
+        # 文件名保留条号便于阅读，并去除 Windows 禁用字符、限制长度。
         slug = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '-', title).strip(' .')[:42]
         filename = f'{number:03d}-{slug}.md'
+        # GitHub 行号从 1 开始，固定版本链接据此定位完整原文。
         line_start = text[:m.start()].count('\n') + 1
         line_end = line_start + body.rstrip('\n').count('\n')
         entries.append(dict(id=uid, chapter=chapter, chapter_title=title_match[1],
                             number=number, title=title, filename=filename,
                             source_file=f'book/{path.name}', block=body,
                             fields=fields, tags=tags, line_start=line_start, line_end=line_end))
-    # Parser must account for every numbered entry marker, with no gaps in text.
+    # 把章节导读和所有 block 拼回去，确保拆分没有漏字或截掉尾部。
     if text[:marks[0].start()] + ''.join(e['block'] for e in entries) != text:
         raise ValueError(f'Round-trip failed: {path.name}')
     return title_match[1], entries
 
 
 def entry_link(entry: dict, prefix: str = '../') -> str:
+    """生成条目链接；prefix 用来适配不同深度的目录和导航文件。"""
     return f'[{entry["chapter"]}-{entry["number"]} {entry["title"]}]({prefix}{entry["path"]})'
 
 
 def references(block: str, chapter: int) -> set[tuple[int, int]]:
+    """提取正文中明确写出的章条引用，返回去重后的 (章号, 条号)。
+
+    「见第 N 条」按当前章解释；只识别已列出的格式，不猜测隐含关联。
+    """
     found = {(int(a), int(b)) for a, b in re.findall(r'第\s*(\d+)\s*[章节]\s*第\s*(\d+)\s*条', block)}
     found |= {(chapter, int(n)) for n in re.findall(r'(?:见本节|本节|参见|详见|见)\s*第\s*(\d+)\s*条', block)}
     return found
 
 
 def build(source: Path, destination: Path, commit: str, retrieved: str) -> None:
+    """从 source 快照创建一个全新的 destination 知识库并打印构建统计。
+
+    commit 必须是完整的 40 位提交号，retrieved 使用 YYYY-MM-DD。
+    提交号用于标注来源；函数不联网，也不验证本地 checkout 是否正是该提交。
+    已存在的目标目录会被拒绝，更新时应建到新目录再人工比较。
+    """
     if not re.fullmatch(r'[a-f0-9]{40}', commit):
         raise ValueError('A full 40-character pinned commit is required.')
     date.fromisoformat(retrieved)
@@ -167,7 +206,8 @@ def build(source: Path, destination: Path, commit: str, retrieved: str) -> None:
     chapter_paths = sorted((source / 'book').glob('[0-9][0-9]-*.md'))
     if not chapter_paths or not (source / 'LICENSE').is_file():
         raise ValueError('Source checkout must contain book/ and LICENSE.')
-    # Validate everything before creating output.
+    # 先解析全部章节并检查条目 ID，避免已知的解析错误留下半成品目录。
+    # 后续复制或写入仍可能因磁盘等错误失败；这里不是事务式构建。
     parsed = [(p, *split_chapter(p)) for p in chapter_paths]
     entries = [e for _, _, group in parsed for e in group]
     if len({e['id'] for e in entries}) != len(entries):
@@ -175,6 +215,7 @@ def build(source: Path, destination: Path, commit: str, retrieved: str) -> None:
     chapters = {int(p.name.split('-')[0]): (p, title) for p, title, _ in parsed}
     for e in entries:
         e['path'] = f'entries/{e["chapter"]:02d}/{e["filename"]}'
+    # 条号地址表用于把明确引用变成相对链接，不存在的地址单独记入报告。
     by_address = {(e['chapter'], e['number']): e for e in entries}
     destination.mkdir(parents=True)
     for name in ['LICENSE', 'LICENSE-CODE']:
@@ -184,11 +225,12 @@ def build(source: Path, destination: Path, commit: str, retrieved: str) -> None:
         target = destination / 'chapters' / p.name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(p, target)
-    # Original docs and verification notes retain their relative layout.
+    # 专题与历史核实记录保留目录结构，便于继续使用原文的相对链接。
     if (source / 'docs').is_dir():
         shutil.copytree(source / 'docs', destination / 'articles')
     source_readme = read_text(source / 'README.md')
     write(destination / 'UPSTREAM.md', source_readme)
+    # 校验表在生成索引和条目之前建立，只记录复制来的来源文件和导读快照。
     files = [p for p in destination.rglob('*') if p.is_file()]
     manifest = '# 原始文件校验表\n\n正文、专题和许可按字节复制。导读 UPSTREAM.md 只规范化 UTF-8 BOM 与换行。\n\n| 原仓库路径 | 本地路径 | SHA-256 |\n| --- | --- | --- |\n'
     for p in files:
@@ -200,6 +242,7 @@ def build(source: Path, destination: Path, commit: str, retrieved: str) -> None:
     write(destination / 'MANIFEST.md', manifest)
     unresolved = []
     for e in entries:
+        # 辅助关键词和主题是整理者加的；成本、证据和争议标记来自原文。
         fields, tags = e['fields'], e['tags']
         groups = [label for label, _, terms, _ in ALIASES if any(t in e['title'] + fields['说人话'] for t in terms.split('、'))]
         terms = [t for _, _, ts, _ in ALIASES for t in ts.split('、') if t in e['title'] + fields['说人话']]
@@ -207,6 +250,7 @@ def build(source: Path, destination: Path, commit: str, retrieved: str) -> None:
         pending = bool(re.search(r'待核实|TODO', e['block']))
         disputed = '争议' in fields['证据等级'] or fields['备注'].startswith('争议')
         pinned = f'{REPO}/blob/{commit}/{quote(e["source_file"], safe="/")}#L{e["line_start"]}-L{e["line_end"]}'
+        # raw_sha256 校验规范化后的完整 block，不是原章节文件的字节校验值。
         meta = dict(id=e['id'], title=e['title'], chapter=e['chapter'], chapter_title=e['chapter_title'],
                     source_entry=e['number'], source_file=e['source_file'], source_commit=commit,
                     retrieved_at=retrieved, source_url=pinned,
@@ -221,6 +265,7 @@ def build(source: Path, destination: Path, commit: str, retrieved: str) -> None:
         text = frontmatter(meta) + f'# {e["title"]}\n\n'
         text += f'[所属章节]({source_link}) · [固定版本原文]({pinned}) · [在线条目]({meta["web_url"]})\n\n'
         text += '关键词、主题、检索分组是辅助索引；成本与证据标签来自原作者。在线条号可能随上游更新改变，核对以固定版本原文为准。\n\n'
+        # 排除自引用；未定位的引用不制造目标文件，仍原样保留在正文里。
         refs = references(e['block'], e['chapter']) - {(e['chapter'], e['number'])}
         valid = []
         for address in sorted(refs):
@@ -230,9 +275,10 @@ def build(source: Path, destination: Path, commit: str, retrieved: str) -> None:
                 unresolved.append((e['chapter'], e['number'], *address))
         if valid:
             text += '原文交叉引用定位（不表示本条建议适用于所有关联场景）：\n\n' + '\n'.join('- ' + x for x in valid) + '\n\n'
-        # Do not rewrite, summarize or truncate the raw entry.
+        # 导航与元数据在前，完整原文在后；检索端用这个固定标记读回原文。
         text += '## 原文\n\n' + e['block']
         write(destination / e['path'], text)
+    # 下面依次生成总目录、主题、场景和专题入口，不另复制一份条目正文。
     overview = '# 高性价比人生 Markdown 知识库\n\n'
     overview += f'固定版本 `{commit}`；取得日期 {retrieved}。共 {len(parsed)} 章、{len(entries)} 条。\n\n'
     overview += '[主题索引](topics/INDEX.md) · [场景索引](topics/scenarios.md) · [关键词与近义表达](topics/keywords.md) · [专题目录](articles/INDEX.md) · [来源与许可](SOURCES.md) · [构建检查](BUILD-REPORT.md)\n\n'
@@ -273,6 +319,7 @@ def build(source: Path, destination: Path, commit: str, retrieved: str) -> None:
     article_index += '\n'.join(f'- [{p.stem}](核实记录/{p.name})' for p in notes) + '\n'
     write(destination / 'articles/INDEX.md', article_index)
     write(destination / 'articles/核实记录/INDEX.md', '# 历史核实记录\n\n这些记录是历史过程，不代表当前已核实。\n\n' + '\n'.join(f'- [{p.stem}]({p.name})' for p in notes) + '\n')
+    # 来源说明区分本地快照与外部参考链接，快照日期不等于现行事实核验。
     write(destination / 'SOURCES.md', f'''# 来源、版本与许可
 
 - 原作者：eternity4719 及《高性价比人生指南》贡献者。
@@ -300,8 +347,8 @@ def build(source: Path, destination: Path, commit: str, retrieved: str) -> None:
     report += '## 未自动定位的原文交叉引用\n\n'
     report += ('\n'.join(f'- {a}-{b} → {c}-{d}（保留原文，不补造目标）' for a, b, c, d in sorted(set(unresolved))) if unresolved else '没有。') + '\n'
     write(destination / 'BUILD-REPORT.md', report)
-    # Preserve raw relative Markdown links using small navigation stubs. This
-    # avoids changing licensed source bytes or duplicating the corpus.
+    # 原文迁移后，一些相对链接还指向旧目录。添加轻量导航页来转接，
+    # 这样无需改动原文文件，也不用再复制一套知识正文。
     contexts = [(destination / 'chapters' / p.name, source / 'book' / p.name) for p, _, _ in parsed]
     contexts += [(destination / 'articles' / p.relative_to(source / 'docs'), p) for p in (source / 'docs').rglob('*.md')]
     contexts += [(destination / 'UPSTREAM.md', source / 'README.md')]
@@ -311,10 +358,10 @@ def build(source: Path, destination: Path, commit: str, retrieved: str) -> None:
             if re.match(r'^[a-zA-Z][a-zA-Z0-9+.-]*:', link) or link.startswith('#'):
                 continue
             relative = link.split('#')[0]
-            # Markdown in maintenance notes also uses glob paths as examples.
-            # These are not navigable file references and cannot be filenames.
+            # 历史记录中的 *.md 等是路径示例，不能当成真实文件名。
             if not relative or any(c in relative for c in '*?<>|'):
                 continue
+            # 先解析绝对路径，再分别限制本地目标和上游目标的目录边界。
             target = (path.parent / relative).resolve()
             if target.exists() or not target.is_relative_to(destination.resolve()):
                 continue
@@ -330,6 +377,7 @@ def build(source: Path, destination: Path, commit: str, retrieved: str) -> None:
                 navigation = target / 'INDEX.md' if relative.endswith('/') else target
                 if local.is_dir() and (local / 'INDEX.md').exists():
                     local = local / 'INDEX.md'
+                # 有本地资料就连接本地；未收录的目标保留固定版本线上链接。
                 if local.exists():
                     url = Path(os.path.relpath(local, navigation.parent)).as_posix()
                 else:
@@ -340,6 +388,7 @@ def build(source: Path, destination: Path, commit: str, retrieved: str) -> None:
 
 
 if __name__ == '__main__':
+    # CLI 只收集构建参数；真正的校验、复制和索引生成都在 build() 中。
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--commit', required=True)

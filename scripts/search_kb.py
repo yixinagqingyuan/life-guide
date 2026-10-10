@@ -1,7 +1,9 @@
-"""Model-free Markdown RAG: BM25F, query expansion, fusion and full context.
+"""知识库检索的命令行入口、条目读取器，以及用于对照的旧版算法。
 
-The Markdown corpus and alias table are the source of truth. No embeddings,
-external API, hidden database, or persistent search cache is required.
+默认调用 advanced_retrieval.py 中的 BM25F 检索；--mode legacy 运行旧版。
+--context 读回完整条目，--show 定位已知条目，--verify-citation 核对摘录。
+脚本只返回资料和排序信息；回答末尾的提醒由宿主模型按 SKILL.md 选择。
+知识正文与近义表均来自本地 Markdown，不需要模型文件、API 或数据库。
 """
 from __future__ import annotations
 
@@ -12,18 +14,27 @@ from pathlib import Path
 import re
 import sys
 
+# 根据脚本所在位置找知识库，避免从其他工作目录运行时找错资料。
 ROOT = Path(__file__).resolve().parents[1] / 'knowledge-base'
 
 
 def load_entry(path: Path) -> dict:
+    """读回一个生成的条目，返回元数据、完整原文和用于检索的字段。
+
+    meta 来自 frontmatter；raw 从「## 原文」后开始，保留原文大小写。
+    title/keywords/human/body 转小写用于匹配，snippet 留作定位摘要。
+    本项目把每个元数据值写成 JSON，因此可用标准库读回；不解析任意 YAML。
+    """
     text = path.read_text(encoding='utf-8')
     match = re.match(r'\A---\n(.*?)\n---\n', text, re.S)
     if not match:
         raise ValueError(f'Metadata missing: {path}')
+    # 只按第一次「: 」分隔键和值，值本身可能含冒号、列表或布尔量。
     meta = {key: json.loads(value) for key, value in
             (line.split(': ', 1) for line in match[1].splitlines())}
     raw = text.split('## 原文\n\n', 1)[1]
     fields = {}
+    # 按相邻标签的边界取完整字段，来源和证据等级仍保存在 raw 中。
     markers = list(re.finditer(r'^- (成本|说人话|收益|证据等级|来源|备注)：', raw, re.M))
     for i, m in enumerate(markers):
         fields[m[1]] = raw[m.end(): markers[i + 1].start() if i + 1 < len(markers) else len(raw)].strip()
@@ -36,11 +47,17 @@ def load_entry(path: Path) -> dict:
 
 
 def load_aliases(root: Path, table: Path | None = None) -> list[dict]:
+    """读取四列近义词表，返回分组名、别名、规范词和优先章节列表。
+
+    table 可覆盖默认路径，主要用于 benchmark 的冻结旧词表对照。
+    解析依赖本项目生成的简单表格格式，词内不应使用列分隔符「|」。
+    """
     rows = []
     text = (table or root / 'topics/keywords.md').read_text(encoding='utf-8')
     for line in text.splitlines():
         if not line.startswith('| '):
             continue
+        # 跳过表头与分隔行；各列内的多项值再按中文顿号拆开。
         columns = [c.strip() for c in line.strip('|').split('|')]
         if len(columns) != 4 or columns[0] == '入口' or columns[0].startswith('---'):
             continue
@@ -50,6 +67,10 @@ def load_aliases(root: Path, table: Path | None = None) -> list[dict]:
 
 
 def ngrams(text: str) -> set[str]:
+    """旧版分词：中文二字片段、英文数字整词，使用集合去重。
+
+    默认新版另外使用二/三字片段和领域长短语，见 advanced_retrieval.tokenize。
+    """
     result = set()
     for run in re.findall(r'[\u4e00-\u9fff]+|[a-z0-9]+', text.lower()):
         if re.fullmatch(r'[a-z0-9]+', run):
@@ -61,9 +82,14 @@ def ngrams(text: str) -> set[str]:
 
 
 def query_parts(query: str, aliases: list[dict]) -> tuple[dict[str, float], set[str], set[int], list[str]]:
+    """准备旧版查询，返回 (词权重, 原句片段, 优先章节, 命中分组)。
+
+    原样命中的完整表达权重 2，扩展词 0.55，普通二字片段 0.5。
+    同词有多种来源时取较高权重，避免同一表达被重复加分。
+    """
     q = query.lower()
     direct, expanded, preferred, groups = {}, {}, set(), []
-    # Full phrases support colloquial questions; canonical terms broaden recall.
+    # 口语映射到规范词，既保存字面匹配，又增加相关主题的召回机会。
     for row in aliases:
         hits = [t for t in row['aliases'] + row['terms'] if t.lower() in q]
         if hits:
@@ -73,6 +99,7 @@ def query_parts(query: str, aliases: list[dict]) -> tuple[dict[str, float], set[
                 direct[t.lower()] = 2.0
             for t in row['terms']:
                 expanded[t.lower()] = 0.55
+    # 去掉少量套话后再切片；这里只属于旧版流程，不影响新版停用词表。
     q_clean = q
     for stop in ['请问', '帮我', '能不能', '有没有', '怎么办', '怎么做', '怎么选', '如何', '为什么', '我想', '应该', '可以', '一下', '这个', '那个', '什么', '是否', '谢谢']:
         q_clean = q_clean.replace(stop, ' ')
@@ -87,6 +114,11 @@ def query_parts(query: str, aliases: list[dict]) -> tuple[dict[str, float], set[
 
 def legacy_retrieve(root: Path, query: str, limit: int = 5, chapters=None, topic=None,
                     grade=None, money=None, disputed=False, pending=False, aliases=None) -> dict:
+    """旧版加权子串检索，保留用于对照，不是默认 BM25F 实现。
+
+    对每个查询词计算条目级 IDF，再按首次匹配字段的位置权重加分。
+    各筛选参数与默认算法保持同类接口；aliases 可传入冻结的历史词表。
+    """
     all_entries = [load_entry(p) for p in sorted((root / 'entries').glob('[0-9][0-9]/*.md'))]
     if not all_entries:
         raise ValueError(f'No entries under {root / "entries"}')
@@ -94,6 +126,7 @@ def legacy_retrieve(root: Path, query: str, limit: int = 5, chapters=None, topic
     weights, grams, preferred, groups = query_parts(query, aliases)
     if not weights:
         return {'status': 'no_match', 'query': query, 'results': [], 'retrieval_groups': groups}
+    # 旧版 IDF 的统计单位是完整条目；新版则以检索窗口为单位。
     size = len(all_entries)
     idf = {}
     for term in weights:
@@ -114,17 +147,19 @@ def legacy_retrieve(root: Path, query: str, limit: int = 5, chapters=None, topic
             continue
         if pending and not meta['pending_verification']:
             continue
+        # 各个筛选条件先执行，排除的条目不会进入当前结果列表。
         score, matched = 0.0, []
         combined = e['title'] + '\n' + e['human'] + '\n' + e['body']
         for term, weight in weights.items():
+            # 同词按最优先的命中字段计一次，不把多个字段的出现次数相加。
             location = (6.0 if term in e['title'] else 3.5 if term in e['keywords']
                         else 2.5 if term in e['human'] else 0.65 if term in e['body'] else 0.0)
             if location:
                 score += weight * idf[term] * location
                 matched.append(term)
         coverage = sum(idf[t] for t in grams if t in combined) / (sum(idf[t] for t in grams) or 1)
-        # Weak substring coincidences alone should not yield authoritative-looking
-        # answers for questions outside the corpus. Scores are not probabilities.
+        # 无近义组时拒绝很弱的原句覆盖，减少范围外问题的偶然子串命中。
+        # 阈值只是启发式；分数和覆盖都不是正确率。
         if not score or (not groups and coverage < 0.32):
             continue
         if meta['chapter'] in preferred:
@@ -145,6 +180,11 @@ def legacy_retrieve(root: Path, query: str, limit: int = 5, chapters=None, topic
 
 def retrieve(root: Path, query: str, limit: int = 5, chapters=None, topic=None,
              grade=None, money=None, disputed=False, pending=False, mode='bm25') -> dict:
+    """统一检索接口，按 mode 路由到默认新版或对照旧版。
+
+    延迟导入 advanced_retrieval，因为它会复用本模块的读条目和读词表函数。
+    避免在模块初始化阶段互相访问尚未定义的函数。
+    """
     if mode == 'legacy':
         result = legacy_retrieve(root, query, limit, chapters, topic, grade, money, disputed, pending)
         result['engine'] = 'legacy-idf'
@@ -156,6 +196,8 @@ def retrieve(root: Path, query: str, limit: int = 5, chapters=None, topic=None,
 
 
 def main() -> None:
+    """解析参数并处理三类请求：验引文、读指定条目、按问题检索。"""
+    # 查询词是可选位置参数，因为 --show 和 --verify-citation 不需要查询词。
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('query', nargs='?')
     parser.add_argument('--root', type=Path, default=ROOT)
@@ -175,6 +217,7 @@ def main() -> None:
     parser.add_argument('--verify-citation', help='Knowledge ID or chapter-entry address to check an exact quote')
     parser.add_argument('--quote', help='Exact quoted text; requires --verify-citation')
     parser.add_argument('--show', help='Read a knowledge ID or version-specific chapter-entry address, e.g. 19-4')
+    # 越界的数量、空引文等在读取知识库前拒绝，错误会显示 CLI 用法。
     args = parser.parse_args()
     if not 1 <= args.limit <= 50:
         parser.error('--limit must be between 1 and 50')
@@ -182,12 +225,14 @@ def main() -> None:
         parser.error('--context-chars must be positive; --related-limit must be 0..10')
     if args.quote is not None and not args.verify_citation:
         parser.error('--quote requires --verify-citation')
+    # 已知条目的引用校验是独立操作，完成后直接返回，不再执行检索。
     if args.verify_citation:
         if not args.quote:
             parser.error('--verify-citation requires a nonempty --quote')
         from advanced_retrieval import verify_quote
         print(json.dumps(verify_quote(args.root, args.verify_citation, args.quote), ensure_ascii=False, indent=2))
         return
+    # --show 支持稳定 ID 和当前快照章条号，两者都读完整文件而非摘要。
     if args.show:
         found = [e for p in sorted((args.root / 'entries').glob('[0-9][0-9]/*.md'))
                  if (e := load_entry(p))['meta']['id'] == args.show or
@@ -204,20 +249,24 @@ def main() -> None:
         return
     if not args.query or not args.query.strip():
         parser.error('Provide a query or --show ID')
+    # 对主题拼写做校验，以免输入错字被误解为「知识库没有相关资料」。
     if args.topic:
         valid_topics = set()
         for p in (args.root / 'entries').glob('[0-9][0-9]/*.md'):
             valid_topics.update(load_entry(p)['meta']['topics'])
         if args.topic not in valid_topics:
             parser.error('Unknown topic; choose: ' + '、'.join(sorted(valid_topics)))
+    # 真正的排序从统一 retrieve() 进入，CLI 只负责传参和展示结果。
     result = retrieve(args.root, args.query, args.limit, args.chapter, args.topic,
                       args.grade, args.money, args.disputed, args.pending, args.mode)
+    # --context 返回原文 block 与交叉引用；--full 返回候选整个文件（含元数据）。
     if args.context:
         from advanced_retrieval import context_bundle
         result['context_bundle'] = context_bundle(args.root, result['results'], args.context_chars, args.related_limit)
     if args.full:
         for e in result['results']:
             e['content'] = Path(e['path']).read_text(encoding='utf-8')
+    # JSON 用于程序读取；普通模式显示定位摘要，条件判断仍应读完整上下文。
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     elif not result['results']:
@@ -242,6 +291,7 @@ def main() -> None:
 
 
 if __name__ == '__main__':
+    # 数据格式或文件错误输出到 stderr，非零退出码便于上层工具识别失败。
     try:
         main()
     except (ValueError, OSError, json.JSONDecodeError) as error:

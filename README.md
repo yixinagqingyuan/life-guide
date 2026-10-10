@@ -43,6 +43,21 @@ python -X utf8 scripts/search_kb.py --verify-citation 5-1 --quote "年付一般�
 | [references/retrieval.md](references/retrieval.md) | 实际召回与重排设计 |
 | [references/retrieval-evaluation.md](references/retrieval-evaluation.md) | 开发样例对比与局限 |
 
+## 源码阅读顺序
+
+先运行上面的查询示例，再按下面的顺序阅读。六个 Python 脚本均附有中文模块说明、函数说明和关键步骤注释。检索脚本负责找出原文与上下文；宿主模型根据 `SKILL.md` 回答问题并选择相关提醒。
+
+| 顺序 | 文件 | 建议关注的内容 |
+| --- | --- | --- |
+| 1 | [scripts/search_kb.py](scripts/search_kb.py) | 命令行入口、条目格式、筛选参数，以及默认算法和旧算法的调用关系 |
+| 2 | [scripts/advanced_retrieval.py](scripts/advanced_retrieval.py) | 分词与窗口切片、BM25F、三路召回、RRF 融合、规则重排和完整上下文 |
+| 3 | [scripts/build_kb.py](scripts/build_kb.py) | 如何把上游 Markdown 拆成完整条目，生成导航、元数据和校验值 |
+| 4 | [scripts/validate_kb.py](scripts/validate_kb.py) | 如何核对条目与原始章节、文件哈希和本地链接 |
+| 5 | [scripts/test_retrieval.py](scripts/test_retrieval.py) | 真实提问的回归样例，以及无匹配、预算不足和原文被修改等边界 |
+| 6 | [scripts/benchmark_retrieval.py](scripts/benchmark_retrieval.py) | 如何比较旧算法、近义词扩展和增强检索，以及开发样例评估的局限 |
+
+[agents/openai.yaml](agents/openai.yaml) 注释说明了技能名称、调用提示词和自动选择配置；完整的回答流程见 [SKILL.md](SKILL.md)。
+
 ## 验证与更新
 
 ```powershell
