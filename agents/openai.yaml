@@ -1,4 +1,6 @@
 interface:
-  display_name: "高性价比人生知识库"
-  short_description: "检索原始指南的完整条目，结合你的处境比较选择并给出有出处的建议"
-  default_prompt: "请用 $life-guide 先检索知识库，再结合我的实际情况给出建议，并附上条目出处。"
+  display_name: "高性价比人生指南"
+  short_description: "先回答你的问题，再从本地《高性价比人生指南》摘录相关原话，以破折号和章节名署出处"
+  default_prompt: "请用 $life-guide 正常回答我接下来的问题，每次答复结尾以‘高性价比人生指南提醒：’为标题，以‘原文句子——《章节名》’展示相关的《高性价比人生指南》原话，不加标签、章节条号或原文链接。"
+policy:
+  allow_implicit_invocation: true

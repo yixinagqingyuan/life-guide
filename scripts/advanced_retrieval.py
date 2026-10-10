@@ -80,6 +80,7 @@ class Corpus:
         self.lexicon = tuple(sorted({normalize(t) for row in self.aliases for t in row['aliases'] + row['terms']}))
         self.by_id = {e['meta']['id']: i for i, e in enumerate(self.entries)}
         self.docs, self.postings = [], defaultdict(dict)
+        self.title_terms = set()
         totals = Counter()
         self.parent_text = []
         for parent, e in enumerate(self.entries):
@@ -87,6 +88,7 @@ class Corpus:
                 raise ValueError(f'Entry content changed without metadata rebuild: {e["path"]}')
             self.parent_text.append(normalize(e['title'] + '\n' + e['human'] + '\n' + e['body']))
             common = {key: tokenize(e[key], self.lexicon) for key in ('title', 'keywords', 'human')}
+            self.title_terms.update(common['title'])
             for label, start, end in windows(e['raw']):
                 fields = dict(common, body=tokenize(e['raw'][start:end], self.lexicon))
                 lengths = {name: sum(counts.values()) for name, counts in fields.items()}
@@ -124,6 +126,9 @@ class Corpus:
             for term, weight in original.items():
                 combined[term] = max(combined.get(term, 0), weight)
             variants.append(('expanded', combined, 0.7))
+            # Keep canonical topic terms independent of incidental words in a
+            # long question. A literal alias can otherwise outvote its topic.
+            variants.append(('canonical', expansion, 1.0))
         return variants, original, groups, preferred, anchors
 
     def rank(self, terms, allowed):
@@ -160,21 +165,34 @@ class Corpus:
         # Weighted lexical coverage is an abstention heuristic, not confidence.
         unknown_idf = math.log(1 + 2 * len(self.docs))
         denominator = sum(self.idf.get(t, unknown_idf) * w for t, w in original.items()) or 1.0
+        canonical = next((terms for channel, terms, _ in variants if channel == 'canonical'), {})
+        canonical_denominator = sum(self.idf.get(t, unknown_idf) * w for t, w in canonical.items()) or 1.0
+        # Preserve literal details such as a named medicine when expansion
+        # also brings in broad topics such as pregnancy. No entity model is used.
+        specific_title_terms = {t: self.idf[t] * w for t, w in original.items()
+                                if len(t) >= 3 and t in self.title_terms and t not in canonical}
+        specific_denominator = sum(specific_title_terms.values()) or 1.0
         results = []
         for parent, fusion_score in fused.items():
             e = self.entries[parent]
             meta, text = e['meta'], self.parent_text[parent]
             found = [t for t in original if t in text]
             coverage = sum(self.idf.get(t, unknown_idf) * original[t] for t in found) / denominator
+            canonical_coverage = sum(self.idf.get(t, unknown_idf) * w
+                                     for t, w in canonical.items() if t in text) / canonical_denominator
             if not groups and coverage < 0.3:
                 continue
             title_terms = [t for t in original if t in normalize(e['title'])]
             title_coverage = sum(original[t] for t in title_terms) / (sum(original.values()) or 1)
+            specific_matches = [t for t in specific_title_terms if t in normalize(e['title'])]
+            specific_coverage = sum(specific_title_terms[t] for t in specific_matches) / specific_denominator
             # Transparent rule reranking; no neural or semantic model is used.
-            rerank = fusion_score * (1 + 0.7 * coverage + 0.5 * title_coverage)
+            rerank = fusion_score * (1 + 0.7 * max(coverage, canonical_coverage) + 0.5 * title_coverage)
             anchor_matches = [term for term in anchors if term in normalize(e['title'])]
             anchor_score = sum(anchors[term] for term in anchor_matches) / (sum(anchors.values()) or 1)
             rerank *= 1 + 0.8 * anchor_score
+            if canonical:
+                rerank *= 1 + 0.8 * specific_coverage
             if meta['chapter'] in preferred:
                 rerank *= 1.12
             doc = self.docs[best_passage[parent]]
@@ -193,6 +211,9 @@ class Corpus:
                                 snippet=e['snippet'][:240], snippet_truncated=len(e['snippet']) > 240,
                                 passage=dict(field=doc['field'], start=doc['start'], end=doc['end'], text=excerpt),
                                 retrieval_trace=dict(channels=traces[parent], lexical_coverage=round(coverage, 4),
+                                                     canonical_coverage=round(canonical_coverage, 4),
+                                                     specific_title_matches=specific_matches,
+                                                     specific_title_coverage=round(specific_coverage, 4),
                                                      title_coverage=round(title_coverage, 4),
                                                      anchor_matches=anchor_matches,
                                                      preferred_chapter=meta['chapter'] in preferred)))

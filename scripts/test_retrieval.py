@@ -44,6 +44,27 @@ class KnowledgeBaseTests(unittest.TestCase):
         self.assertEqual(result['status'], 'no_match')
         self.assertEqual(result['results'], [])
 
+    def test_nap_phrases_retrieve_nap_entries(self):
+        # Both source entries discuss naps; the afternoon alertness entry must
+        # also remain available when comparing complete candidates.
+        expected = {'2-37', '3-11'}
+        cases = [
+            '午休',
+            '午睡',
+            '小睡',
+            '下午犯困',
+            '午休睡过头，醒来下午没了',
+            '想下午更精神，中午午睡多久',
+            '最近有个很火的github项目《高性价比人生指南》，它说想下午更精神，中午就得睡个午觉。我试过了，人确实是精神了，但特么下午没了，开头怎么优化？',
+        ]
+        for query in cases:
+            with self.subTest(query=query):
+                result = retrieve(ROOT, query, limit=3)
+                addresses = [f"{e['chapter']}-{e['source_entry']}" for e in result['results']]
+                self.assertTrue(addresses, result)
+                self.assertIn(addresses[0], expected, addresses)
+                self.assertIn('3-11', addresses, addresses)
+
     def test_filters_are_applied(self):
         result = retrieve(ROOT, '保险', limit=10, chapters=[5], money='0', grade='A')
         self.assertTrue(result['results'])
@@ -51,6 +72,11 @@ class KnowledgeBaseTests(unittest.TestCase):
             self.assertEqual(e['chapter'], 5)
             self.assertEqual(e['cost_money'], '0')
             self.assertTrue(e['evidence_label'].startswith('A'))
+
+    def test_specific_terms_are_not_overridden_by_topic_expansion(self):
+        result = retrieve(ROOT, '我怀孕二十二周能自己吃布洛芬吗', limit=3)
+        first = result['results'][0]
+        self.assertEqual((first['chapter'], first['source_entry']), (34, 5))
 
     def test_empty_filter_is_no_match(self):
         self.assertEqual(retrieve(ROOT, '安全带', chapters=[999])['status'], 'no_match')
