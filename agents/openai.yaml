@@ -1,0 +1,4 @@
+interface:
+  display_name: "高性价比人生知识库"
+  short_description: "检索原始指南的完整条目，结合你的处境比较选择并给出有出处的建议"
+  default_prompt: "请用 $life-guide 先检索知识库，再结合我的实际情况给出建议，并附上条目出处。"
