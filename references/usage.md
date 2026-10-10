@@ -4,7 +4,23 @@
 
 维护与分发以 `life-guide` 为唯一技能包，原始章节、专题、完整条目及检索脚本都在包内。安装时复制整个文件夹，知识库不依赖工作区里的其他旧版目录。原章节用于完整阅读与来源对照，条目用于检索，两者属于同一个 Skill。
 
-首次安装见 [首页的安装与启用](../README.md#安装与启用)：包含 Codex 安装消息、Windows/macOS/Linux 的 Git 命令、ZIP 安装、目录结构和验收步骤。仓库根目录就是 Skill；内置安装器应指定 `--path . --name life-guide`，完整保留包内资料，不只复制 `SKILL.md`。
+首次安装见 [首页的安装与启用](../README.md#安装与启用)：推荐消息包含安装和全局启用，也提供 Windows/macOS/Linux 的 Git 命令、ZIP 安装、目录结构和验收步骤。仓库根目录就是 Skill；内置安装器应指定 `--path . --name life-guide`，完整保留包内资料，不只复制 `SKILL.md`。
+
+## 安装后的全局配置
+
+用户选择“安装并全局启用”时，先完整安装 Skill、核对知识库和 Python 运行环境，再从实际安装位置运行配置脚本。用户只要求安装时按其范围安装；用户需要全局默认时再配置。以下命令在安装目录中执行，其他工作目录需改用脚本的绝对路径：
+
+```powershell
+python -X utf8 scripts/configure_global.py --enable
+python -X utf8 scripts/configure_global.py --status
+python -X utf8 scripts/configure_global.py --disable
+```
+
+三行分别是启用、查看状态、撤销，按本次请求选择，不能依次全执行。启用或撤销可加 `--dry-run` 预览，状态字段 `enabled` 表示当前生效的全局文件是否包含本 Skill 规则；它不表示模型已完成一次回答验证。配置后在新对话直接提问来检查自动提醒。
+
+脚本按 `CODEX_HOME`（未设置时为 `~/.codex`）找到当前配置，优先非空的 `AGENTS.override.md`，否则用 `AGENTS.md`。路径来自脚本实际安装位置，不包含作者电脑的固定路径。它保留其他指令的原始字节，只增改 `life-guide-default` 标记内的规则；重复启用不会重复添加。撤销会清理两份文件中属于本 Skill 的标记规则，保留其他内容和分隔空行。
+
+`--codex-home` 可显式指定其他 Codex 用户配置目录；测试一律使用独立临时目录。文件编码、标记或写入权限有问题时脚本报错，核对实际文件后处理，不能把错误当作已配置成功。遇到宿主权限限制时遵循其授权机制。完整安装消息及手动安装方法以 [首页说明](../README.md#所有新对话都默认附提醒) 为准。
 
 ## 随答提醒
 
@@ -64,6 +80,7 @@ python -X utf8 scripts/build_kb.py --source "原仓库快照目录" --commit "40
 ```powershell
 python -X utf8 scripts/validate_kb.py
 python -X utf8 scripts/test_retrieval.py
+python -X utf8 scripts/test_global_config.py
 python -X utf8 scripts/benchmark_retrieval.py
 ```
 
