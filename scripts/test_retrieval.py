@@ -9,6 +9,7 @@ import subprocess
 import sys
 import unittest
 import json
+from collections import Counter
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -27,6 +28,19 @@ class KnowledgeBaseTests(unittest.TestCase):
         self.assertEqual(report['chapters'], 34)
         self.assertEqual(report['entries'], 676)
         self.assertEqual(report['links_outside_package'], 0)
+
+    def test_value_ratings_match_pinned_author_totals(self):
+        """整本书的三档数量应与原作者导读一致，学习示例应显示高。"""
+        # 预期数量来自固定版本 UPSTREAM.md，而非复制本地计算结果。
+        counts = Counter(load_entry(path)['meta']['value_rating']
+                         for path in ROOT.glob('entries/[0-9][0-9]/*.md'))
+        self.assertEqual(counts, {'极高': 114, '高': 303, '一般': 259})
+        # 验证两种命令背后的接口都把作者分档带到实际命中条目中。
+        for mode in ('bm25', 'legacy'):
+            with self.subTest(mode=mode):
+                first = retrieve(ROOT, '学习 理解 自测', limit=1, mode=mode)['results'][0]
+                self.assertEqual((first['chapter'], first['source_entry']), (23, 14))
+                self.assertEqual(first['value_rating'], '高')
 
     def test_real_questions_retrieve_relevant_entries(self):
         """常见口语提问应在前五名中召回原文对应条目。"""

@@ -275,6 +275,7 @@ class Corpus:
                                 matched_terms=matched, evidence_label=meta['evidence_label'],
                                 cost_money=meta['cost_money'], cost_time=meta['cost_time'],
                                 cost_will=meta['cost_will'], benefit_label=meta['benefit_label'],
+                                value_rating=meta['value_rating'],
                                 benefit_dimension=meta['benefit_dimension'], disputed=meta['disputed'],
                                 pending_verification=meta['pending_verification'],
                                 source_url=meta['source_url'], web_url=meta['web_url'],

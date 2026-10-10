@@ -17,6 +17,30 @@ import sys
 # 根据脚本所在位置找知识库，避免从其他工作目录运行时找错资料。
 ROOT = Path(__file__).resolve().parents[1] / 'knowledge-base'
 
+# 沿用原作者固定版本 tools/lib/book.mjs 中的 COST_W 与 ratioOf()。
+# 「时间少」在原站权重中记 0，不意味着现实中完全不耗时。
+VALUE_COST_WEIGHTS = {
+    'cost_money': {'0': 0, '少': 1, '多': 2},
+    'cost_time': {'少': 0, '中': 1, '多': 2},
+    'cost_will': {'否': 0, '些': 1, '是': 2},
+}
+
+
+def value_rating(meta: dict) -> str:
+    """按原指南规则返回「极高／高／一般」，缺失或未知标签返回「未标注」。
+
+    三项成本权重相加：收益大且成本 0 为极高，收益大且成本不超过 2
+    为高，收益中且成本 0 也为高，其余为一般。这是作者的分档，
+    与证据等级和检索分数无关；不用于跨收益口径比较。
+    """
+    level = meta.get('benefit_label')
+    if level not in ('大', '中', '小') or any(meta.get(field) not in weights for field, weights in VALUE_COST_WEIGHTS.items()):
+        return '未标注'
+    cost = sum(weights[meta[field]] for field, weights in VALUE_COST_WEIGHTS.items())
+    if level == '大':
+        return '极高' if cost == 0 else '高' if cost <= 2 else '一般'
+    return '高' if level == '中' and cost == 0 else '一般'
+
 
 def load_entry(path: Path) -> dict:
     """读回一个生成的条目，返回元数据、完整原文和用于检索的字段。
@@ -32,6 +56,8 @@ def load_entry(path: Path) -> dict:
     # 只按第一次「: 」分隔键和值，值本身可能含冒号、列表或布尔量。
     meta = {key: json.loads(value) for key, value in
             (line.split(': ', 1) for line in match[1].splitlines())}
+    # 分档在读取时派生，不改写知识库文件或原文校验值。
+    meta['value_rating'] = value_rating(meta)
     raw = text.split('## 原文\n\n', 1)[1]
     fields = {}
     # 按相邻标签的边界取完整字段，来源和证据等级仍保存在 raw 中。
@@ -171,6 +197,7 @@ def legacy_retrieve(root: Path, query: str, limit: int = 5, chapters=None, topic
                             path=str(e['path'].resolve()), score=round(score, 3),
                             matched_terms=sorted(matched, key=lambda t: (-weights[t], -len(t))),
                             evidence_label=meta['evidence_label'], cost_money=meta['cost_money'],
+                            value_rating=meta['value_rating'],
                             cost_time=meta['cost_time'], cost_will=meta['cost_will'],
                             benefit_label=meta['benefit_label'], benefit_dimension=meta['benefit_dimension'],
                             disputed=meta['disputed'], pending_verification=meta['pending_verification'],
