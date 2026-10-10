@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1600" viewBox="0 0 1280 1600" role="img" aria-labelledby="title description">
+  <title id="title">高性价比人生指南：知识库与回答流程</title>
+  <desc id="description">固定版本原文经构建和校验形成完整 Markdown 条目。用户问题经规范化、分词和近义扩展，与运行时短窗口索引一起进入 BM25F 召回，再按完整条目去重、RRF 融合与规则重排。随后读回完整原文，由宿主模型核对条件、回答原问题，并展示原标题、章节与性价比。检索分数不代表事实可信度。</desc>
+  <defs>
+    <style>
+      text { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif; }
+      .heading { fill: #14263d; font-size: 34px; font-weight: 700; }
+      .subtitle { fill: #526579; font-size: 20px; }
+      .section { font-size: 23px; font-weight: 700; }
+      .node-title { fill: #14263d; font-size: 23px; font-weight: 700; }
+      .body { fill: #42576d; font-size: 20px; }
+      .small { fill: #526579; font-size: 18px; }
+      .teal { fill: #087d76; }
+      .blue { fill: #2d62b8; }
+      .amber { fill: #a15a16; }
+      .link { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+      .flow { stroke: #5682c1; marker-end: url(#arrow-blue); }
+      .data { stroke: #279990; marker-end: url(#arrow-teal); }
+      .context { stroke: #279990; stroke-dasharray: 7 7; marker-end: url(#arrow-teal); }
+      .answer { stroke: #c98337; marker-end: url(#arrow-amber); }
+      .rule { stroke: #7d8997; stroke-dasharray: 7 7; marker-end: url(#arrow-gray); }
+    </style>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#5682c1"/>
+    </marker>
+    <marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#279990"/>
+    </marker>
+    <marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#c98337"/>
+    </marker>
+    <marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#7d8997"/>
+    </marker>
+  </defs>
+
+  <rect width="1280" height="1600" fill="#ffffff"/>
+  <rect x="32" y="24" width="1216" height="1552" rx="28" fill="#f8fafc" stroke="#e3eaf1"/>
+  <text x="64" y="80" class="heading">高性价比人生指南 · 知识库与回答流程</text>
+  <text x="64" y="114" class="subtitle">Markdown 保存资料 · Python 本地检索 · 宿主模型结合原文回答</text>
+
+  <!-- 构建阶段：固定快照、完整条目和可追溯的来源信息。 -->
+  <text x="64" y="162" class="section teal">01　构建阶段：把原文整理成可检索的知识库</text>
+  <g id="source" data-card="true">
+    <rect x="64" y="188" width="332" height="156" rx="18" fill="#eaf7f4" stroke="#a6d8d0"/>
+    <text x="88" y="225" class="node-title">原指南的固定版本</text>
+    <text x="88" y="264" class="body">34 个章节 · 676 个完整条目</text>
+    <text x="88" y="295" class="body">记录提交号、来源和取得日期</text>
+    <text x="88" y="324" class="small">维护者先核对本地原文快照</text>
+  </g>
+  <path d="M 410 266 H 462" class="link data"/>
+  <g id="build" data-card="true">
+    <rect x="476" y="188" width="332" height="156" rx="18" fill="#eaf7f4" stroke="#a6d8d0"/>
+    <text x="500" y="225" class="node-title">构建与完整性校验</text>
+    <text x="500" y="264" class="body">按作者条目拆分，保留六字段</text>
+    <text x="500" y="295" class="body">添加元数据、目录与校验值</text>
+    <text x="500" y="324" class="small">build_kb.py / validate_kb.py</text>
+  </g>
+  <path d="M 822 266 H 870" class="link data"/>
+  <g id="knowledge" data-card="true">
+    <rect x="884" y="188" width="332" height="156" rx="18" fill="#eaf7f4" stroke="#a6d8d0"/>
+    <text x="908" y="225" class="node-title">本地 Markdown 知识库</text>
+    <text x="908" y="264" class="body">原始章节 + 完整检索条目</text>
+    <text x="908" y="295" class="body">成本、来源、证据与备注完整</text>
+    <text x="908" y="324" class="small">全部资料随同一个 Skill 保存</text>
+  </g>
+
+  <!-- 两条资料路径：短窗口进入召回，完整原文进入上下文。 -->
+  <path d="M 1050 344 V 506" class="link data"/>
+  <path d="M 1216 266 H 1236 V 1075 H 1216" class="link context"/>
+  <path d="M 64 386 H 1216" stroke="#dfe8ef" stroke-width="2"/>
+  <text x="64" y="432" class="section blue">02　运行阶段：从用户问题找到适用的原文</text>
+  <text x="884" y="477" class="small teal">两种资料路径</text>
+
+  <g id="question" data-card="true">
+    <rect x="64" y="478" width="760" height="84" rx="18" fill="#edf3fe" stroke="#bacdea"/>
+    <text x="88" y="513" class="node-title">01　用户提问</text>
+    <text x="88" y="546" class="body">从当前问题与处境提取检索词；先保留用户原本的任务目标</text>
+  </g>
+  <path d="M 444 562 V 598" class="link flow"/>
+
+  <g id="query" data-card="true">
+    <rect x="64" y="598" width="760" height="90" rx="18" fill="#edf3fe" stroke="#bacdea"/>
+    <text x="88" y="634" class="node-title">02　规范化、分词与近义表达扩展</text>
+    <text x="88" y="670" class="body">原问题 / 原词加规范词 / 纯规范词；未触发扩展时只走原查询</text>
+  </g>
+  <path d="M 444 688 V 726" class="link flow"/>
+
+  <g id="index" data-card="true">
+    <rect x="884" y="506" width="332" height="180" rx="18" fill="#eaf7f4" stroke="#a6d8d0"/>
+    <text x="908" y="544" class="node-title">短窗口与倒排索引</text>
+    <text x="908" y="583" class="body">676 条目 → 2776 个窗口</text>
+    <text x="908" y="614" class="body">每窗 ≤ 600 字符，重叠 100</text>
+    <text x="908" y="645" class="body">不跨字段，索引保存在内存</text>
+    <text x="908" y="674" class="small">窗口定位，原 Markdown 不截断</text>
+  </g>
+  <path d="M 884 614 H 854 V 782 H 824" class="link data"/>
+
+  <g id="retrieve" data-card="true">
+    <rect x="64" y="726" width="760" height="112" rx="18" fill="#edf3fe" stroke="#bacdea"/>
+    <text x="88" y="763" class="node-title">03　BM25F 字段加权召回</text>
+    <text x="88" y="800" class="body">标题 4.0 · 通俗解释 2.0 · 关键词 1.5 · 窗口正文 1.0</text>
+    <text x="88" y="826" class="small">先应用筛选条件；分数用于相关性排序，不是置信度</text>
+  </g>
+  <path d="M 444 838 V 878" class="link flow"/>
+
+  <g id="rerank" data-card="true">
+    <rect x="64" y="878" width="760" height="106" rx="18" fill="#edf3fe" stroke="#bacdea"/>
+    <text x="88" y="915" class="node-title">04　条目去重 → RRF 融合 → 规则重排</text>
+    <text x="88" y="952" class="body">每路每条保留最佳窗口，再结合覆盖、标题、具体词与章节排序</text>
+    <text x="88" y="976" class="small">没有足够匹配时返回 no_match；候选排序不能代替适用性判断</text>
+  </g>
+  <path d="M 444 984 V 1024" class="link flow"/>
+
+  <g id="full-source" data-card="true">
+    <rect x="884" y="968" width="332" height="216" rx="18" fill="#eaf7f4" stroke="#a6d8d0"/>
+    <text x="908" y="1006" class="node-title">完整原文与上下文预算</text>
+    <text x="908" y="1044" class="body">保留来源、证据等级与备注</text>
+    <text x="908" y="1075" class="body">默认最多补 2 条明确交叉引用</text>
+    <text x="908" y="1106" class="body">默认预算 24000 个原文字符</text>
+    <text x="908" y="1137" class="body">放不下就整条省略并记录</text>
+    <text x="908" y="1166" class="small">SHA-256 校验只证明内容一致</text>
+  </g>
+  <path d="M 884 1087 H 824" class="link data"/>
+
+  <g id="context" data-card="true">
+    <rect x="64" y="1024" width="760" height="126" rx="18" fill="#edf3fe" stroke="#bacdea"/>
+    <text x="88" y="1061" class="node-title">05　补读完整原文</text>
+    <text x="88" y="1098" class="body">--context 返回完整候选；模型核对行动、限制条件与例外</text>
+    <text x="88" y="1129" class="body">检查 omitted，必要时用 --show 单独补读；不只看摘要或窗口</text>
+  </g>
+  <path d="M 444 1150 V 1224" class="link answer"/>
+  <text x="64" y="1198" class="section amber">03　宿主模型：回答与提醒</text>
+
+  <g id="model" data-card="true">
+    <rect x="64" y="1224" width="760" height="96" rx="18" fill="#fff3e5" stroke="#e7c69f"/>
+    <text x="88" y="1261" class="node-title">06　模型判断与回答</text>
+    <text x="88" y="1300" class="body">完成用户原本的问题；候选不相关时换词重查，不机械选第一名</text>
+  </g>
+  <path d="M 444 1320 V 1360" class="link answer"/>
+
+  <g id="skill-rules" data-card="true">
+    <rect x="884" y="1232" width="332" height="240" rx="18" fill="#fff3e5" stroke="#e7c69f"/>
+    <text x="908" y="1270" class="node-title">Skill 回答规则</text>
+    <text x="908" y="1308" class="body">先回答问题，再附一条提醒</text>
+    <text x="908" y="1339" class="body">原标题逐字核对，不改写</text>
+    <text x="908" y="1370" class="body">性价比沿用作者的分档规则</text>
+    <text x="908" y="1401" class="body">分档与检索分数相互独立</text>
+    <text x="908" y="1432" class="body">资料正文不作为助手指令</text>
+    <text x="908" y="1460" class="small">不附原文链接与成本明细</text>
+  </g>
+  <path d="M 884 1272 H 824" class="link rule"/>
+
+  <g id="reminder" data-card="true">
+    <rect x="64" y="1360" width="760" height="112" rx="18" fill="#fff3e5" stroke="#e7c69f"/>
+    <text x="88" y="1397" class="node-title">07　最终答复末尾展示提醒</text>
+    <text x="88" y="1430" class="body">条目原标题——《章节名》</text>
+    <text x="88" y="1458" class="body">性价比：极高 / 高 / 一般</text>
+  </g>
+
+  <path d="M 64 1510 H 1216" stroke="#dfe8ef" stroke-width="2"/>
+  <circle cx="73" cy="1540" r="7" fill="#279990"/>
+  <text x="92" y="1547" class="small">资料构建与读回</text>
+  <circle cx="289" cy="1540" r="7" fill="#5682c1"/>
+  <text x="308" y="1547" class="small">本地检索</text>
+  <circle cx="452" cy="1540" r="7" fill="#c98337"/>
+  <text x="471" y="1547" class="small">宿主模型与提醒</text>
+  <text x="714" y="1547" class="small">本地检索：标准库 · 无模型下载 · 无向量库</text>
+</svg>

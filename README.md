@@ -8,6 +8,8 @@
 
 想了解原文怎样整理成知识库、切片和检索怎样工作，以及 RAG 如何生成最后的提醒，请看 [知识库原理：从 Markdown 原文到检索与提醒](知识库原理.md)。说明按本仓库实际代码编写，包含流程图、查询示例和源码入口，方便学习与修改。
 
+![高性价比人生指南知识库与回答流程图](assets/knowledge-base-flow.svg)
+
 ## 内容
 
 - 34 个原始章节，676 个保留完整正文的条目。
@@ -40,6 +42,7 @@ python -X utf8 scripts/search_kb.py --verify-citation 5-1 --quote "年付一般�
 | --- | --- |
 | [SKILL.md](SKILL.md) | Skill 的触发范围、回答流程与引用规则 |
 | [知识库原理.md](知识库原理.md) | 原文整理、两层切片、召回排序、RAG 和提醒生成的入门说明 |
+| [assets/knowledge-base-flow.svg](assets/knowledge-base-flow.svg) | 首页与原理文档共用的可编辑流程图 |
 | [knowledge-base/INDEX.md](knowledge-base/INDEX.md) | 知识库总目录 |
 | [knowledge-base/chapters/](knowledge-base/chapters/) | 原始章节 |
 | [knowledge-base/entries/](knowledge-base/entries/) | 完整条目与检索元数据 |
